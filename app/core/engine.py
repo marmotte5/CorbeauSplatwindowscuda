@@ -5,6 +5,7 @@ import platform
 import json
 import subprocess
 import logging
+import sqlite3
 from pathlib import Path
 from typing import Tuple, Any, Optional, Callable
 from .base_engine import BaseEngine
@@ -153,6 +154,9 @@ class ColmapEngine(BaseEngine):
         """Exécute les étapes de reconstruction COLMAP."""
         database_path = project_dir / "database.db"
         sparse_dir = project_dir / "sparse"
+        if sparse_dir.exists():
+            shutil.rmtree(sparse_dir)
+            self.log(f"Reconstruction sparse precedente supprimee : {sparse_dir.name}")
         sparse_dir.mkdir(exist_ok=True)
 
         # Always start from a fresh database to avoid SQLite schema incompatibilities
@@ -170,6 +174,8 @@ class ColmapEngine(BaseEngine):
         self.status(tr("status_feature_extraction", "Analyse des images en cours..."))    
         if not self.feature_extraction(str(database_path), str(images_dir)):
             return False, "Échec extraction features"
+        if self.params.matcher_type == 'sequential':
+            self._sort_colmap_database_images(database_path)
             
         self.progress(50)
         
@@ -536,6 +542,7 @@ class ColmapEngine(BaseEngine):
 
     def feature_extraction(self, database_path: str, images_dir: str) -> bool:
         """Exécute l'extraction des features SIFT."""
+        image_list_path = self._write_sorted_image_list(images_dir)
         cmd = [
             self.colmap_bin, 'feature_extractor',
             '--database_path', database_path,
@@ -548,7 +555,104 @@ class ColmapEngine(BaseEngine):
             '--SiftExtraction.estimate_affine_shape', '1' if self.params.estimate_affine_shape else '0',
             '--SiftExtraction.domain_size_pooling', '1' if self.params.domain_size_pooling else '0',
         ]
+        if image_list_path:
+            cmd.extend(['--image_list_path', str(image_list_path)])
         return self.run_command(cmd, "Extraction des features", status_prefix="Analyse")
+
+    def _write_sorted_image_list(self, images_dir: str) -> Optional[Path]:
+        """Write a deterministic COLMAP image list so sequential matching follows frame order."""
+        image_root = Path(images_dir)
+        files = sorted(
+            f for f in image_root.rglob('*')
+            if f.is_file()
+            and f.suffix.lower() in _IMAGE_EXTS
+            and not f.name.lower().endswith('.mask.png')
+        )
+        if not files:
+            return None
+
+        image_list_path = image_root.parent / "image_list.txt"
+        with image_list_path.open("w", encoding="utf-8") as f:
+            for image_file in files:
+                f.write(f"{image_file.relative_to(image_root).as_posix()}\n")
+
+        self.log(f"Liste d'images triee pour COLMAP: {len(files)} images")
+        return image_list_path
+
+    def _sort_colmap_database_images(self, database_path: Path) -> None:
+        """Make image IDs follow filename order for COLMAP's sequential matcher."""
+        try:
+            with sqlite3.connect(str(database_path)) as con:
+                rows = con.execute(
+                    "SELECT image_id, name FROM images ORDER BY name"
+                ).fetchall()
+                id_map = {old_id: new_id for new_id, (old_id, _) in enumerate(rows, start=1)}
+                if all(old_id == new_id for old_id, new_id in id_map.items()):
+                    self.log("Ordre des images COLMAP deja trie.")
+                    return
+
+                con.execute("PRAGMA foreign_keys=OFF")
+                con.execute("DELETE FROM matches")
+                con.execute("DELETE FROM two_view_geometries")
+                con.execute("CREATE TEMP TABLE image_id_map(old_id INTEGER PRIMARY KEY, new_id INTEGER NOT NULL)")
+                con.executemany(
+                    "INSERT INTO image_id_map(old_id, new_id) VALUES (?, ?)",
+                    id_map.items(),
+                )
+                table_columns = {
+                    table_name: {
+                        column[1]
+                        for column in con.execute(f"PRAGMA table_info({table_name})").fetchall()
+                    }
+                    for table_name, in con.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()
+                }
+
+                offset = 1000000000
+                for table, column in [
+                    ("images", "image_id"),
+                    ("keypoints", "image_id"),
+                    ("descriptors", "image_id"),
+                    ("frames", "frame_id"),
+                    ("frame_data", "frame_id"),
+                    ("frame_data", "data_id"),
+                    ("pose_priors", "corr_data_id"),
+                ]:
+                    if column not in table_columns.get(table, set()):
+                        continue
+                    con.execute(
+                        f"""
+                        UPDATE {table}
+                        SET {column} = (
+                            SELECT new_id + ?
+                            FROM image_id_map
+                            WHERE old_id = {table}.{column}
+                        )
+                        WHERE {column} IN (SELECT old_id FROM image_id_map)
+                        """,
+                        (offset,),
+                    )
+                    con.execute(
+                        f"""
+                        UPDATE {table}
+                        SET {column} = {column} - ?
+                        WHERE {column} > ?
+                        """,
+                        (offset, offset),
+                    )
+
+                con.execute("DROP TABLE image_id_map")
+                con.execute(
+                    "UPDATE sqlite_sequence SET seq = (SELECT MAX(image_id) FROM images) WHERE name = 'images'"
+                )
+                con.execute(
+                    "UPDATE sqlite_sequence SET seq = (SELECT MAX(frame_id) FROM frames) WHERE name = 'frames'"
+                )
+                con.commit()
+                self.log(f"Base COLMAP retriee pour matching sequentiel: {len(rows)} images")
+        except Exception as e:
+            self.log(f"Avertissement: tri de la base COLMAP echoue: {e}")
 
     def feature_matching(self, database_path: str) -> bool:
         """Exécute le matching des features."""
@@ -560,6 +664,9 @@ class ColmapEngine(BaseEngine):
                 '--SiftMatching.max_ratio', str(self.params.max_ratio),
                 '--SiftMatching.max_distance', str(self.params.max_distance),
                 '--SiftMatching.cross_check', '1' if self.params.cross_check else '0',
+                '--FeatureMatching.guided_matching', '1' if self.params.guided_matching else '0',
+                '--SequentialMatching.overlap', str(self.params.sequential_overlap),
+                '--SequentialMatching.quadratic_overlap', '1',
             ]
             description = "Matching Sequentiel"
         else:
@@ -570,6 +677,7 @@ class ColmapEngine(BaseEngine):
                 '--SiftMatching.max_ratio', str(self.params.max_ratio),
                 '--SiftMatching.max_distance', str(self.params.max_distance),
                 '--SiftMatching.cross_check', '1' if self.params.cross_check else '0',
+                '--FeatureMatching.guided_matching', '1' if self.params.guided_matching else '0',
             ]
             description = "Matching Exhaustif"
             
