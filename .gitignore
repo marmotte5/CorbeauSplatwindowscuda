@@ -25,6 +25,7 @@ engines/
 
 # Application - User Config & Logs
 config.json
+audit_journal.json
 *.log
 
 # IDE
