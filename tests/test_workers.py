@@ -124,6 +124,7 @@ class TestColmapWorker:
         if not WORKERS_AVAILABLE:
             pytest.skip(WORKERS_REASON)
         worker = ColmapWorker.__new__(ColmapWorker)
+        worker.process = None  # Avoids AttributeError in BaseWorker.stop()
         with patch.object(worker, 'log_signal', MagicMock()):
             with patch.object(worker, 'finished_signal', MagicMock()):
                 with patch.object(worker, 'status_signal', MagicMock()):

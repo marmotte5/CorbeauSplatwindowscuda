@@ -172,6 +172,15 @@ class FourDGSTab(QWidget):
                 self._log_to_view("Création du venv .venv_4dgs...")
                 subprocess.check_call([sys.executable, "-m", "venv", str(venv_python.parent.parent)])
             
+            # Upgrade pip first
+            self._log_to_view("Mise à jour de pip...")
+            subprocess.check_call([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"])
+
+            # Pre-install PyAV from wheel to avoid Cython 3.x compilation failure (Issue #6)
+            # PyAV <14 has no Python 3.13 wheels and fails to compile with Cython 3.x
+            self._log_to_view("Installation de PyAV (wheel pré-compilée)...")
+            subprocess.check_call([str(venv_python), "-m", "pip", "install", "av>=14.0.0", "--only-binary", ":all:"])
+
             # Install nerfstudio inside the dedicated venv
             cmd = [str(venv_python), "-m", "pip", "install", "nerfstudio"]
             self._log_to_view(f"Exécution: {' '.join(cmd)}")

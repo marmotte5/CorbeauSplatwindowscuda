@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.1] - 2026-06-18
+
+### 🐞 Bug Fixes
+- **4DGS installation fails on Python 3.13 (Issue #6)**: PyAV (`av`) < 14.0.0 has no pre-compiled wheel for Python 3.13 ARM64 and fails to compile with Cython 3.x (stricter `noexcept` signature checks). `install_dependencies()` now pre-installs `av>=14.0.0 --only-binary :all:` before nerfstudio, bypassing Cython compilation entirely.
+- **4DGS activation crash on Mac M4 (Issue #5)**: `import subprocess` was missing from `four_dgs_tab.py`. Already fixed in a prior commit. The installation command is now robust with pip upgrade + PyAV wheel pre-install (see above).
+- **Test suite flaky failures (20 tests)**: `test_managers.py` patched PyQt6 with bare `MagicMock()` instances, causing `isinstance` checks to raise `TypeError` and `QThread` subclasses to fail with `issubclass() arg 1 must be a class`. Fixed by introducing `tests/conftest.py` with proper class-based mocks (`_MockQThread`, `_MockPyQtSignal`) and a real PyQt6 module hierarchy.
+- **`TestColmapWorker.test_stop_calls_engine_stop`**: Missing `worker.process = None` caused `AttributeError` in `BaseWorker.stop()`. Added the missing attribute initialization.
+
+### 🛠 Improvements
+- **Installation robustness**: `install_dependencies()` now upgrades pip before installing packages and adds detailed logging for each step.
+- **Test infrastructure**: New `tests/conftest.py` provides session-scoped PyQt6 mocking that all test modules share, eliminating module import order issues.
+
+### 🧪 Testing
+- **209/209 tests pass** (up from 189/209 with 20 flaky failures).
+
 ## [1.0.0] - 2026-06-17
 
 ### 🎉 Major Milestone — First Stable Release

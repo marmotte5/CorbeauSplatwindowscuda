@@ -8,14 +8,8 @@ from unittest.mock import Mock, patch, MagicMock, call, ANY
 
 import pytest
 
-# Patch PyQt6 and send2trash at module level if missing
-for _mod_name in ["PyQt6", "PyQt6.QtWidgets", "PyQt6.QtGui", "PyQt6.QtCore",
-                  "send2trash"]:
-    if _mod_name not in sys.modules:
-        sys.modules[_mod_name] = MagicMock()
-if "PyQt6.QtCore" in sys.modules:
-    sys.modules["PyQt6.QtCore"].QTimer = MagicMock()
-    sys.modules["PyQt6.QtCore"].pyqtSignal = MagicMock()
+# PyQt6 and send2trash mocking moved to tests/conftest.py
+# to ensure patches are applied before any test module is imported.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
