@@ -399,14 +399,31 @@ class ColmapEngine(BaseEngine):
             self.log(f"Trop peu d'images ({len(files)}) — filtrage du flou ignoré.")
             return
 
+        total = len(files)
+        self.log(f"Analyse de la netteté de {total} images...")
         scores = {}
-        for f in files:
+        for i, f in enumerate(files):
             if self.is_cancelled():
                 return
             img = cv2.imread(str(f), cv2.IMREAD_GRAYSCALE)
             if img is None:
                 continue
+            # Downscale large images before the Laplacian — the relative sharpness
+            # ranking is preserved and this is ~10x faster on full-res frames.
+            h, w = img.shape[:2]
+            longest = max(h, w)
+            if longest > 640:
+                s = 640.0 / longest
+                img = cv2.resize(img, (max(1, int(w * s)), max(1, int(h * s))),
+                                 interpolation=cv2.INTER_AREA)
             scores[f] = float(cv2.Laplacian(img, cv2.CV_64F).var())
+
+            done = i + 1
+            if done % 100 == 0 or done == total:
+                self.status(f"Analyse netteté : {done}/{total}")
+                self.progress(int(done / total * 100))
+                if done % 500 == 0 or done == total:
+                    self.log(f"  netteté analysée : {done}/{total}")
 
         rejected, threshold = select_blurry_files(scores, factor)
         if not rejected:
