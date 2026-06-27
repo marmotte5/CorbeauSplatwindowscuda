@@ -1,9 +1,8 @@
 # CorbeauSplat — Windows / CUDA Edition
 
-**CorbeauSplat** is an all-in-one Gaussian Splatting automation tool for **Windows with NVIDIA CUDA GPUs**. It streamlines the whole workflow from raw video/images to a fully trained and viewable 3D scene (Gaussian Splat).
+> 🙏 **Fork of the original [CorbeauSplat](https://github.com/freddewitt/CorbeauSplat) by [@freddewitt](https://github.com/freddewitt)** (a macOS / Apple-Silicon project). All credit for the original concept and pipeline goes to the upstream author — this edition ports it to **Windows + NVIDIA CUDA** and is focused on **video → frames → COLMAP → Brush splat training → view**.
 
-> 🪟 **Windows/CUDA fork** of the original macOS project. The pipeline is focused on
-> **video → frames → COLMAP → Brush splat training → view**, accelerated by your NVIDIA GPU.
+**CorbeauSplat (Windows / CUDA Edition)** is an all-in-one Gaussian Splatting automation tool for **Windows with NVIDIA CUDA GPUs**. It streamlines the whole workflow from raw video/images to a fully trained and viewable 3D scene (Gaussian Splat).
 
 ![CorbeauSplat Interface](assets/interface.webp)
 
@@ -12,7 +11,7 @@
 A unified GUI (and CLI) to orchestrate:
 1.  **Project Management**: Organises outputs into structured project folders (images, sparse data, checkpoints).
 2.  **Frame Extraction**: Pulls frames from a video with **FFmpeg**, using **NVIDIA NVDEC (`-hwaccel cuda`)** when a GPU is present.
-3.  **Sparse Reconstruction**: Automates **COLMAP** feature extraction, matching and mapping with **GPU-accelerated SIFT** (`--SiftExtraction.use_gpu` / `--SiftMatching.use_gpu`). Supports **Glomap** as an alternative mapper.
+3.  **Sparse Reconstruction**: Automates **COLMAP** feature extraction, matching and mapping with **GPU-accelerated SIFT** (the CUDA build uses the GPU automatically). Defaults are tuned for video: **sequential** matching and optional **GPU bundle adjustment** (COLMAP 4.1.0). Supports **Glomap** as an alternative mapper.
 4.  **Undistortion**: Optionally undistorts images for optimal training quality.
 5.  **AI Upscaling** *(optional)*: Enhances input images with **upscayl-ncnn** before reconstruction.
 6.  **Training**: Integrates **Brush** (Rust/wgpu, DirectX 12 / Vulkan) to train Gaussian Splats on your GPU.
